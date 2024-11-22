@@ -1,75 +1,75 @@
 import argparse
 from datetime import timedelta, datetime
 
+STRFTIME = "%Y-%m-%d %H:%M"
 
-MAX_BATTERY_CAPACITY_KWH=38.0
-MAX_CHARGING_KWH=3.8
-MAX_RANGE_KM=310
-STRFTIME="%Y-%m-%d %H:%M"
+def main():
+    args = parse_arguments()
+    remaining_km, remaining_perc = compute_remaining_values(args)
+    charge_needed, charge_amount, charging_time = compute_charging_details(remaining_perc, args)
+    start_at, finish_at = compute_schedule(charging_time, args.finish_at)
+    print_results(remaining_km, remaining_perc, charge_needed, charge_amount, args.max_battery_capacity_kwh, charging_time, finish_at, start_at)
 
-def main() -> None:
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="A CLI to calculate EV charging schedules")
-    parser.add_argument("-km","--remaining_km", type=int, help="Remaining number of Kilometers, until battery is empty")
-    parser.add_argument("-p", "--remaining_percentage", type=int, help="Remaining battery percentage, until battery is empty")
+    parser.add_argument("-km", "--remaining_km", type=int, help="Remaining number of Kilometers, until battery is empty")
+    parser.add_argument("-p", "--remaining_percentage", type=float, help="Remaining battery percentage, until battery is empty")
     parser.add_argument("-f", "--finish_at", type=str, default="6am", help="Time at when the charge is expected to be finished")
-    args = parser.parse_args()
+    parser.add_argument("--max_battery_capacity_kwh", type=float, required=True, help="Maximum battery capacity in KWh")
+    parser.add_argument("--max_charging_rate_kwh", type=float, required=True, help="Max charging rate in KWh per hour")
+    parser.add_argument("--max_range_km", type=int, required=True, help="Maximum range of the vehicle in kilometers")
+    return parser.parse_args()
 
+def compute_remaining_values(args) -> (int, float):
     if not args.remaining_km and not args.remaining_percentage:
-        raise Exception("You have to at least provide remaining kilometers (-km) or remaining percentage (-p)!")
+        raise ValueError("You have to at least provide remaining kilometers (-km) or remaining percentage (-p)!")
+    
+    remaining_km = args.remaining_km if args.remaining_km else percentage_to_km(args.remaining_percentage, args.max_range_km)
+    remaining_perc = args.remaining_percentage if args.remaining_percentage else km_to_percentage(remaining_km, args.max_range_km)
+    return remaining_km, remaining_perc
 
-    remaining_km = args.remaining_km if args.remaining_km else percentage_to_km(args.remaining_percentage)
-    remaining_perc = args.remaining_percentage if args.remaining_percentage else km_to_percentage(args.remaining_km)
+def compute_charging_details(remaining_perc: float, args) -> (float, float, timedelta):
     charge_needed = percentage_to_max(remaining_perc)
-    charge_amount = current_perc_as_missing_kwh(charge_needed)
-    charging_time = get_charging_time(charge_amount)
+    charge_amount = current_perc_as_missing_kwh(charge_needed, args.max_battery_capacity_kwh)
+    charging_time = get_charging_time(charge_amount, args.max_charging_rate_kwh)
+    return charge_needed, charge_amount, charging_time
 
-    finish_at = get_finish_at()
+def compute_schedule(charging_time: timedelta, finish_at_str: str) -> (datetime, datetime):
+    finish_at = get_finish_at(finish_at_str)
     start_at = get_start_time(charging_time, finish_at)
+    return start_at, finish_at
 
-    finish_at_str = finish_at.strftime(STRFTIME)
-    start_at_str = start_at.strftime(STRFTIME)
-        
+def print_results(remaining_km, remaining_perc, charge_needed, charge_amount, max_kwh, charging_time, finish_at, start_at):
+    print(f"Remaining KM: {remaining_km}")
+    print(f"Remaining Percentage: {remaining_perc}%")
+    print(f"Charge Needed to Reach 100%: {charge_needed}%")
+    print(f"Amount of Charge Needed (kWh): {charge_amount} kWh")
+    print(f"Charging Time Required: {charging_time}")
+    print(f"Finish Charging At: {finish_at.strftime(STRFTIME)}")
+    print(f"Start Charging At: {start_at.strftime(STRFTIME)}")
 
-    print(f"Remaining number of kilometers: {remaining_km}") 
-    print(f"Remaining battery: {remaining_perc}%")
-    print(f"Percentage missing until max {charge_needed}%")
-    print(f"There are {charge_amount} KWh missing until your capacity of {MAX_BATTERY_CAPACITY_KWH} KWh is reached")
-    print(f"Total time to charge: {charging_time}")
-    print(f"""Assuming you want to be finished charging at {finish_at_str} with a battery
-capacity of almost 100%, you need to start charging by: {start_at_str}""")
+def km_to_percentage(km: int, max_range: int) -> float:
+    return round((km / max_range) * 100, 1)
 
-def current_km_to_max(current: int, _max: int = MAX_RANGE_KM) -> int:
-    return _max - current
+def percentage_to_km(percentage: float, max_range: int) -> int:
+    return round((max_range * percentage) / 100, 0)
 
-def km_to_percentage(km: int, max_range: int = MAX_RANGE_KM) -> int:
-    perc = (km / max_range) * 100
-    return round(perc,1)
+def percentage_to_max(percentage: float) -> float:
+    return 100 - percentage
 
-def percentage_to_km(percentage: float, max_range: int = MAX_RANGE_KM) -> int:
-    km = (max_range * percentage) / 100
-    return round(km, 0)
-
-def percentage_to_max(percentage: float, max_percentage: float = 100.0) -> float:
-    return max_percentage - percentage
-
-def current_perc_as_missing_kwh(percentage: float, max_kwh: float = MAX_BATTERY_CAPACITY_KWH) -> float:
+def current_perc_as_missing_kwh(percentage: float, max_kwh: float) -> float:
     return (percentage / 100) * max_kwh
 
-def get_charging_time(kwh: float, charging_rate_kwh: float = MAX_CHARGING_KWH) -> timedelta:
-    charging_time_hours = kwh / charging_rate_kwh
-    return timedelta(hours=charging_time_hours)
+def get_charging_time(kwh: float, charging_rate_kwh: float) -> timedelta:
+    return timedelta(hours=kwh / charging_rate_kwh)
 
-def get_finish_at() -> datetime:
+def get_finish_at(finish_time_str: str) -> datetime:
     tomorrow = datetime.today() + timedelta(days=1)
-    tomorrow_at_6am = tomorrow.replace(hour=6, minute=10, second=0)
-    return tomorrow_at_6am
+    hour, minute = map(int, finish_time_str.split(":"))
+    return tomorrow.replace(hour=hour, minute=minute, second=0)
 
 def get_start_time(charge_time: timedelta, finish_at: datetime) -> datetime:
     return finish_at - charge_time
-
-
-def current_percentage_to_max(current: float, _max: float = 100) -> float:
-    return _max - current
 
 if __name__ == "__main__":
     main()

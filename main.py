@@ -6,9 +6,9 @@ STRFTIME = "%Y-%m-%d %H:%M"
 
 def main():
     args = parse_arguments()
-    remaining_km, remaining_perc = compute_remaining_values(args)
+    remaining_km, remaining_perc = compute_remaining_values(args.remaining_km, args.remaining_percentage, args.max_range_km)
     charge_needed, charge_amount, charging_time = compute_charging_details(
-        remaining_perc, args
+        remaining_perc, args.max_battery_capacity_kwh, args.max_charging_rate_kwh
     )
     start_at, finish_at = compute_schedule(charging_time, args.finish_at)
     print_results(
@@ -66,31 +66,31 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def compute_remaining_values(args) -> tuple[int, float]:
-    if not args.remaining_km and not args.remaining_percentage:
+def compute_remaining_values(remaining_km, remaining_percentage, max_range_km) -> tuple[int, float]:
+    if not remaining_km and not remaining_percentage:
         raise ValueError(
             "You have to at least provide remaining kilometers (-km) or remaining percentage (-p)!"
         )
 
     remaining_km = (
-        args.remaining_km
-        if args.remaining_km
-        else percentage_to_km(args.remaining_percentage, args.max_range_km)
+        remaining_km
+        if remaining_km
+        else percentage_to_km(remaining_percentage, max_range_km)
     )
     remaining_perc = (
-        args.remaining_percentage
-        if args.remaining_percentage
-        else km_to_percentage(remaining_km, args.max_range_km)
+        remaining_percentage
+        if remaining_percentage
+        else km_to_percentage(remaining_km, max_range_km)
     )
     return remaining_km, remaining_perc
 
 
-def compute_charging_details(remaining_perc: float, args) -> tuple[float, float, timedelta]:
+def compute_charging_details(remaining_perc: float, max_battery_capacity_kwh, max_charging_rate_kwh) -> tuple[float, float, timedelta]:
     charge_needed = percentage_to_max(remaining_perc)
     charge_amount = current_perc_as_missing_kwh(
-        charge_needed, args.max_battery_capacity_kwh
+        charge_needed, max_battery_capacity_kwh
     )
-    charging_time = get_charging_time(charge_amount, args.max_charging_rate_kwh)
+    charging_time = get_charging_time(charge_amount, max_charging_rate_kwh)
     return charge_needed, charge_amount, charging_time
 
 
